@@ -1,4 +1,4 @@
-# Evalutation of sample-specific network inference methods 
+# Evaluation of sample-specific network inference methods 
 Code accompanying the paper "Evaluation of single-sample network inference methods for precision oncology" 
 
 ## Folder resources 
