@@ -405,3 +405,27 @@ pairwise.wilcox.test(PlantGrowth$weight, PlantGrowth$group,
                      p.adjust.method = "BH")
 library(FSA)
 dunnTest(value~variable, data = merged_long)
+
+
+
+df_list <- list(SSN, LIONESS, iENA, CSN, SSPGI, aggregate_res)
+merged <- data.frame(df_list %>% reduce(left_join, by='gene'))
+rownames(merged) <- merged$gene; merged$gene <- NULL
+colnames(merged) <- c('SSN', 'LIONESS', 'iENA', 'CSN', 'SSPGI','Aggregate'); merged <- abs(merged)
+merged_long <- reshape2::melt(merged)
+comparisons <- list(c('Aggregate', 'SSPGI'), c('Aggregate', 'CSN'),  c('Aggregate', 'iENA'), c('Aggregate', 'LIONESS'), c('Aggregate', 'SSN'))
+cbbPalette <- c("#a9a9a9", "#a9a9a9", "#a9a9a9", "#a9a9a9", "#a9a9a9", "#FFFFFF")
+
+pdf('/home/boris/shared/proteomics_brain_noExpr_poster.pdf')
+ggplot(merged_long, aes(x = variable, y=value, fill = variable)) + geom_boxplot() + 
+  stat_compare_means(comparisons = comparisons, label = 'p.signif', vjust=0.75, label.x = 5, label.y = c(0.3, 0.32,0.34,0.36,0.38), tip.length = 0.02) +
+  stat_compare_means(label.x = 4.75, label.y = 0.260) +
+  ggtitle('Correlation between protein abundance and node importance \n in sample-specific networks') + scale_fill_manual(values=cbbPalette) +
+  xlab("") + ylab("Mean correlation coefficient") +
+  theme(plot.title = element_text(hjust = 0.5), axis.text.x = element_text(angle=0, hjust=0.5, size = 12),
+        panel.background = element_rect(fill = 'white', colour = 'white'),
+        # panel.grid.minor = element_line(size=0.2, linetype='solid', colour='black'), 
+        # panel.grid.major = element_line(size=0.1, linetype='solid', colour='grey'),
+        axis.line = element_line(size = 0.5, linetype = 'solid', colour = 'black'),
+        legend.position = 'none') 
+dev.off()

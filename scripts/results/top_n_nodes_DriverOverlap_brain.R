@@ -15,17 +15,9 @@ library(stringr)
 library(ggvenn)
 library(ggpubr)
 
-setwd('/home/boris/Documents/PhD/single_sample/networks')
-base <- '/home/boris/Documents/PhD/single_sample/networks/'
-
-aggregate <- fread('./aggregate/bulk_network_brain_PCC_no_doubles_no_loops_HumanNet.csv', fill = TRUE, header = TRUE, data.table = FALSE) #Should we use the complete aggregate network or the top 25k edges?
-aggregate$reg <- convertToSymbol(aggregate$reg)
-aggregate$tar <- convertToSymbol(aggregate$tar)
-HumanNet_genes <- unique(as.vector(as.matrix(aggregate[,c(1,2)])))
-tmp1 <- intersect(HumanNet_genes, MBL_drivers$Symbol)
-tmp2 <- intersect(HumanNet_genes, HGG_drivers$Symbol)
-length(union(tmp1, tmp2))
-
+################################################################################################################
+#### Functions
+################################################################################################################
 
 convertToSymbol <- function(top200list){
   top200list <- str_replace(top200list, "\\s.*","")
@@ -98,29 +90,85 @@ overlapWithDrivers <- function(top200list, cancerType, driverlist){
 }
 
 test_hyper <- function(method, driverlist, samples){
-  # method <- SSN_brain
-  # samples <- HGG_samples
+  
   names(method) <- gsub('X', '', names(method))
   method <- method[names(method) %in% samples$DepMap_ID]
+  drivers_in_network <- intersect(driverlist$Symbol, HumanNet_genes)
   hubs <- unique(unlist(unname(method))) 
-  succes <- intersect(hubs, driverlist$Symbol)
-  possible_successes <- driverlist$Symbol
-  population_possible_sucesses <- length(HumanNet_genes) - length(driverlist$Symbol)
-  hubs
+  # succes <- intersect(hubs, drivers_in_network)
+  # possible_successes <- drivers_in_network
+  # population_possible_sucesses <- length(HumanNet_genes) - length(drivers_in_network)
+  #hubs
   
-  #H0: by ranodom chance, the overlap between hub genes and drivers would be no greater than our observation
-  #H1: We observe more overlap between hub genes and drivers than would be expected from random chance
-  test <- phyper(length(succes), length(possible_successes), population_possible_sucesses, length(hubs))
-  return(test)
+  # Calculate hypergeometric test p-value
+  total_genes <- length(HumanNet_genes)  # Total number of genes in your dataset
+  #total_genes <- length(all_drivers) # If you want to enrich against a background of known cancer driver genes instead of against the network
+  driver_genes <- length(drivers_in_network)  # Number of known driver genes
+  
+  hub_gene_count <- length(hubs)  # Number of hub genes
+  overlap_count <- length(intersect(hubs, drivers_in_network))  # Number of overlapping genes
+  
+  res <- list()
+  
+  # Calculate expected overlap by chance
+  expected_overlap <- driver_genes * (hub_gene_count / total_genes)
+  
+  # Calculate fold change
+  res$fold_change <- overlap_count / expected_overlap
+  
+  # Calculate hypergeometric test p-value
+  res$test <- phyper(overlap_count - 1, driver_genes, total_genes - driver_genes, hub_gene_count, lower.tail = FALSE)
+  
+  #return(test)
+  return(res)
 }
+
+################################################################################################################
+#### Analysis
+################################################################################################################
+
+
+setwd('/home/boris/Documents/PhD/single_sample/networks')
+base <- '/home/boris/Documents/PhD/single_sample/networks/'
+
+# Now check enrichment for known drivers
+MBL_drivers_intogen <- fread('./IntOGen-DriverGenes_MBL.tsv')[,1]
+HGG_drivers_intogen <- fread('./IntOGen-DriverGenes_GBM.tsv')[,1]
+MBL_drivers_census <- fread('./Census_MBL_19_06_2023.tsv')[,1]
+HGG_drivers_census <- fread('./Census_GBM_19_06_2023.tsv')[,1]
+
+MBL_drivers <- rbind(MBL_drivers_intogen, MBL_drivers_census, use.names=FALSE)
+HGG_drivers <- rbind(HGG_drivers_intogen, HGG_drivers_census, use.names=FALSE)
+
+
+all_drivers_intogen <- fread('./IntOGen-DriverGenes_all.tsv')[,1]
+all_drivers_census <- fread('./Census_all_23_06_2023.tsv')[,1]
+all_drivers <- rbind(all_drivers_intogen, all_drivers_census, use.names=FALSE)
+
+
+aggregate <- fread('./aggregate/bulk_network_brain_PCC_no_doubles_no_loops_HumanNet.csv', fill = TRUE, header = TRUE, data.table = FALSE) #Should we use the complete aggregate network or the top 25k edges?
+aggregate$reg <- convertToSymbol(aggregate$reg)
+aggregate$tar <- convertToSymbol(aggregate$tar)
+HumanNet_genes <- unique(as.vector(as.matrix(aggregate[,c(1,2)])))
+tmp1 <- intersect(HumanNet_genes, MBL_drivers$Symbol)
+tmp2 <- intersect(HumanNet_genes, HGG_drivers$Symbol)
+length(union(tmp1, tmp2))
+
 
 
 # number_of_hubs <- seq(5,500,10)
-number_of_hubs <- 200
+#number_of_hubs <- seq(1,200,5)
+number_of_hubs <- c(200)
 p_values_HGG <- data.frame(matrix(nrow = 5, ncol=length(number_of_hubs)))
-rownames(p_values_HGG) <- c('LIONESS_brain', 'SSN_brain', 'ssPCC_brain', 'CSN_brain', 'SSPGI_brain'); colnames(p_values_HGG) <- c(200)
+rownames(p_values_HGG) <- c('LIONESS_brain', 'SSN_brain', 'ssPCC_brain', 'CSN_brain', 'SSPGI_brain'); colnames(p_values_HGG) <- number_of_hubs
 p_values_MBL <- data.frame(matrix(nrow = 5, ncol=length(number_of_hubs)))
-rownames(p_values_MBL) <- c('LIONESS_brain', 'SSN_brain', 'ssPCC_brain', 'CSN_brain', 'SSPGI_brain'); colnames(p_values_MBL) <- c(200)
+rownames(p_values_MBL) <- c('LIONESS_brain', 'SSN_brain', 'ssPCC_brain', 'CSN_brain', 'SSPGI_brain'); colnames(p_values_MBL) <- number_of_hubs
+
+fold_changes_HGG <- data.frame(matrix(nrow = 5, ncol=length(number_of_hubs)))
+rownames(fold_changes_HGG) <- c('LIONESS_brain', 'SSN_brain', 'ssPCC_brain', 'CSN_brain', 'SSPGI_brain'); colnames(fold_changes_HGG) <- number_of_hubs
+fold_changes_MBL <- data.frame(matrix(nrow = 5, ncol=length(number_of_hubs)))
+rownames(fold_changes_MBL) <- c('LIONESS_brain', 'SSN_brain', 'ssPCC_brain', 'CSN_brain', 'SSPGI_brain'); colnames(fold_changes_MBL) <- number_of_hubs
+
 
 aggregate <- fread('./aggregate/bulk_network_brain_PCC_no_doubles_no_loops_HumanNet.csv', fill = TRUE, header = TRUE, data.table = FALSE) #Should we use the complete aggregate network or the top 25k edges?
 aggregate$reg <- convertToSymbol(aggregate$reg)
@@ -225,20 +273,16 @@ for (j in (1:length(number_of_hubs))){
   data_for_boxplot$group <- as.factor(data_for_boxplot$group)
   colnames(data_for_boxplot) <- c('Method(s)', 'Number of overlapping hubs', 'Group')
   cbbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
-  pdf(paste0('../results/top200_connected_nodes/brain/Top_',k,'_connected_nodes_lung_overlap.pdf'))
-  print(ggplot(data_for_boxplot, aes(x = `Method(s)`, y=`Number of overlapping hubs`, fill = Group)) + geom_boxplot() +
-          ggtitle('Overlap between the top 200 most connected nodes') + scale_colour_manual(values=cbbPalette) +
-          theme(plot.title = element_text(hjust = 0.5), axis.text.x = element_text(angle=45, hjust=1, size = 6), 
-                panel.background = element_rect(fill = 'white', colour = 'white'),
-                # panel.grid.minor = element_line(size=0.2, linetype='solid', colour='black'), 
-                panel.grid.major = element_line(size=0.1, linetype='solid', colour='grey'),
-                axis.line = element_line(size = 0.5, linetype = 'solid', colour = 'black'))) 
-  dev.off()
-  
-  # Now check enrichment for known drivers
-  MBL_drivers <- fread('./IntOGen-DriverGenes_MBL.tsv')[,1]
-  HGG_drivers <- fread('./IntOGen-DriverGenes_GBM.tsv')[,1]
-  
+  # pdf(paste0('../results/top200_connected_nodes/brain/Boxplots/Top_',k,'_connected_nodes_brain_overlap.pdf'))
+  # print(ggplot(data_for_boxplot, aes(x = `Method(s)`, y=`Number of overlapping hubs`, fill = Group)) + geom_boxplot() +
+  #         ggtitle('Overlap between the top 200 most connected nodes') + scale_colour_manual(values=cbbPalette) +
+  #         theme(plot.title = element_text(hjust = 0.5), axis.text.x = element_text(angle=45, hjust=1, size = 6), 
+  #               panel.background = element_rect(fill = 'white', colour = 'white'),
+  #               # panel.grid.minor = element_line(size=0.2, linetype='solid', colour='black'), 
+  #               panel.grid.major = element_line(size=0.1, linetype='solid', colour='grey'),
+  #               axis.line = element_line(size = 0.5, linetype = 'solid', colour = 'black'))) 
+  # dev.off()
+  # 
   # Read in sample metadata and group samples based on subtype
   sample_metadata <- fread('20Q4_v2_sample_info.csv')[,c(1,19,24)]
   sample_metadata$DepMap_ID <- substr(sample_metadata$DepMap_ID, 7, nchar(sample_metadata$DepMap_ID))
@@ -252,9 +296,9 @@ for (j in (1:length(number_of_hubs))){
   CSN_MBL <- overlapWithDrivers(CSN_brain, type, MBL_drivers)
   ssPCC_MBL <- overlapWithDrivers(iENA_brain, type, MBL_drivers)
   SSPGI_MBL <- overlapWithDrivers(SSPGI_brain, type, MBL_drivers)
-  pdf(paste0('../results/top200_connected_nodes/brain/',type,'_top', k, 'nodes_driverOverlap.pdf'))
-  print(ggarrange(SSN_MBL, LIONESS_MBL, ssPCC_MBL, LIONESS_MBL, SSPGI_MBL, nrow=3, ncol=2, labels = c('SSN', 'LIONESS', 'iENA', 'CSN', 'SSPGI'), font.label = list(size = 8)))
-  dev.off()
+  # pdf(paste0('../results/top200_connected_nodes/brain/Venn/',type,'_top', k, 'nodes_driverOverlap.pdf'))
+  # print(ggarrange(SSN_MBL, LIONESS_MBL, ssPCC_MBL, LIONESS_MBL, SSPGI_MBL, nrow=3, ncol=2, labels = c('SSN', 'LIONESS', 'iENA', 'CSN', 'SSPGI'), font.label = list(size = 8)))
+  # dev.off()
   
   type <- 'Glioblastoma'; print(type)
   LIONESS_HGG <- overlapWithDrivers(LIONESS_brain, type, HGG_drivers)
@@ -262,29 +306,52 @@ for (j in (1:length(number_of_hubs))){
   CSN_HGG <- overlapWithDrivers(CSN_brain, type, HGG_drivers)
   ssPCC_HGG <- overlapWithDrivers(iENA_brain, type, HGG_drivers)
   SSPGI_HGG <- overlapWithDrivers(SSPGI_brain, type, HGG_drivers)
-  pdf(paste0('../results/top200_connected_nodes/brain/',type,'_top', k, 'nodes_driverOverlap.pdf'))
-  print(ggarrange(SSN_HGG, LIONESS_HGG, ssPCC_HGG, CSN_HGG, SSPGI_HGG, nrow=3, ncol=2, labels = c('SSN', 'LIONESS', 'iENA', 'CSN', 'SSPGI'), font.label = list(size = 8)))
-  dev.off()
+  # pdf(paste0('../results/top200_connected_nodes/brain/Venn/',type,'_top', k, 'nodes_driverOverlap.pdf'))
+  # print(ggarrange(SSN_HGG, LIONESS_HGG, ssPCC_HGG, CSN_HGG, SSPGI_HGG, nrow=3, ncol=2, labels = c('SSN', 'LIONESS', 'iENA', 'CSN', 'SSPGI'), font.label = list(size = 8)))
+  # dev.off()
   
-  p_values_MBL['LIONESS_brain', j] <- test_hyper(LIONESS_brain, MBL_drivers, MBL_samples)
-  p_values_MBL['SSN_brain', j] <- test_hyper(SSN_brain,  MBL_drivers, MBL_samples)
-  p_values_MBL['ssPCC_brain', j] <- test_hyper(iENA_brain, MBL_drivers, MBL_samples)
-  p_values_MBL['CSN_brain', j] <- test_hyper(CSN_brain, MBL_drivers, MBL_samples)
-  p_values_MBL['SSPGI_brain', j] <- test_hyper(SSPGI_brain, MBL_drivers, MBL_samples)
+  p_values_MBL['LIONESS_brain', j] <- test_hyper(LIONESS_brain, MBL_drivers, MBL_samples)$test
+  p_values_MBL['SSN_brain', j] <- test_hyper(SSN_brain,  MBL_drivers, MBL_samples)$test
+  p_values_MBL['ssPCC_brain', j] <- test_hyper(iENA_brain, MBL_drivers, MBL_samples)$test
+  p_values_MBL['CSN_brain', j] <- test_hyper(CSN_brain, MBL_drivers, MBL_samples)$test
+  p_values_MBL['SSPGI_brain', j] <- test_hyper(SSPGI_brain, MBL_drivers, MBL_samples)$test
   
-  p_values_HGG['LIONESS_brain', j] <- test_hyper(LIONESS_brain, HGG_drivers, HGG_samples)
-  p_values_HGG['SSN_brain', j] <- test_hyper(SSN_brain, HGG_drivers, HGG_samples)
-  p_values_HGG['ssPCC_brain', j] <- test_hyper(iENA_brain, HGG_drivers, HGG_samples)
-  p_values_HGG['CSN_brain', j] <- test_hyper(CSN_brain, HGG_drivers, HGG_samples)
-  p_values_HGG['SSPGI_brain', j] <- test_hyper(SSPGI_brain, HGG_drivers, HGG_samples)
+  p_values_HGG['LIONESS_brain', j] <- test_hyper(LIONESS_brain, HGG_drivers, HGG_samples)$test
+  p_values_HGG['SSN_brain', j] <- test_hyper(SSN_brain, HGG_drivers, HGG_samples)$test
+  p_values_HGG['ssPCC_brain', j] <- test_hyper(iENA_brain, HGG_drivers, HGG_samples)$test
+  p_values_HGG['CSN_brain', j] <- test_hyper(CSN_brain, HGG_drivers, HGG_samples)$test
+  p_values_HGG['SSPGI_brain', j] <- test_hyper(SSPGI_brain, HGG_drivers, HGG_samples)$test
+  
+  
+  fold_changes_MBL['LIONESS_brain', j] <- test_hyper(LIONESS_brain, MBL_drivers, MBL_samples)$fold_change
+  fold_changes_MBL['SSN_brain', j] <- test_hyper(SSN_brain,  MBL_drivers, MBL_samples)$fold_change
+  fold_changes_MBL['ssPCC_brain', j] <- test_hyper(iENA_brain, MBL_drivers, MBL_samples)$fold_change
+  fold_changes_MBL['CSN_brain', j] <- test_hyper(CSN_brain, MBL_drivers, MBL_samples)$fold_change
+  fold_changes_MBL['SSPGI_brain', j] <- test_hyper(SSPGI_brain, MBL_drivers, MBL_samples)$fold_change
+  
+  fold_changes_HGG['LIONESS_brain', j] <- test_hyper(LIONESS_brain, HGG_drivers, HGG_samples)$fold_change
+  fold_changes_HGG['SSN_brain', j] <- test_hyper(SSN_brain, HGG_drivers, HGG_samples)$fold_change
+  fold_changes_HGG['ssPCC_brain', j] <- test_hyper(iENA_brain, HGG_drivers, HGG_samples)$fold_change
+  fold_changes_HGG['CSN_brain', j] <- test_hyper(CSN_brain, HGG_drivers, HGG_samples)$fold_change
+  fold_changes_HGG['SSPGI_brain', j] <- test_hyper(SSPGI_brain, HGG_drivers, HGG_samples)$fold_change
   
   write.table(p_values_HGG, '../results/top200_connected_nodes/brain/p_values_HGG.txt', row.names = TRUE, sep = '\t', quote = FALSE)
   write.table(p_values_MBL, '../results/top200_connected_nodes/brain/p_values_MBL.txt', row.names = TRUE, sep = '\t', quote = FALSE)
+
+  write.table(fold_changes_HGG, '../results/top200_connected_nodes/brain/fold_changes_HGG.txt', row.names = TRUE, sep = '\t', quote = FALSE)
+  write.table(fold_changes_MBL, '../results/top200_connected_nodes/brain/fold_changes_MBL.txt', row.names = TRUE, sep = '\t', quote = FALSE)
+  
+  
+  # write.table(p_values_HGG, '../results/top200_connected_nodes/brain/p_values_HGG_vs_allDrivers.txt', row.names = TRUE, sep = '\t', quote = FALSE)
+  # write.table(p_values_MBL, '../results/top200_connected_nodes/brain/p_values_MBL_vs_allDrivers.txt', row.names = TRUE, sep = '\t', quote = FALSE)
+  # 
+  # write.table(fold_changes_HGG, '../results/top200_connected_nodes/brain/fold_changes_HGG_vs_allDrivers.txt', row.names = TRUE, sep = '\t', quote = FALSE)
+  # write.table(fold_changes_MBL, '../results/top200_connected_nodes/brain/fold_changes_MBL_vs_allDrivers.txt', row.names = TRUE, sep = '\t', quote = FALSE)
   
 }
 
 save.image('../results/top200_connected_nodes/brain/results200.RData')
-load('../results/top200_connected_nodes/brain/results5_500.RData')
+#load('../results/top200_connected_nodes/brain/results5_500.RData')
 
 LIONESS_intersection <- Reduce(intersect, unname(LIONESS_brain)) # zero genes overlapping across all samples
 SSN_intersection <- Reduce(intersect, SSN_brain) # zero genes
@@ -307,23 +374,23 @@ overlap_within_subtype(CSN_brain)
 overlap_within_subtype(SSPGI_brain)
 
 # # Create plot of p-values per subtype
-# rownames(p_values_HGG) <- c('LIONESS', 'SSN', 'ssPCC', 'CSN', 'SSPGI')
-# HGG_t <- as.data.frame(p_values_HGG)
-# HGG_t$method <-row.names(HGG_t)
-# HGG_t <- melt(HGG_t); colnames(HGG_t) <- c('Method', 'Number of hubs per sample', 'p-value')
-# 
-# pdf('../results/top200_connected_nodes/brain/HGG_p_values.pdf')
-# ggplot(HGG_t, aes(x=`Number of hubs per sample`, y=`p-value`, color = Method, group = Method)) + geom_line() + theme_bw() +
-#   scale_x_discrete(breaks=seq(5,500,50)) + geom_hline(yintercept=0.05) + scale_y_continuous(breaks=c(0.05, 0.25, 0.5, 0.75,1))
-# dev.off()
-# 
-# rownames(p_values_MBL) <- c('LIONESS', 'SSN', 'ssPCC', 'CSN', 'SSPGI')
-# MBL_t <- as.data.frame(p_values_MBL)
-# MBL_t$method <-row.names(MBL_t)
-# MBL_t <- melt(MBL_t); colnames(MBL_t) <- c('Method', 'Number of hubs per sample', 'p-value')
-# 
-# pdf('../results/top200_connected_nodes/brain/MBL_p_values.pdf')
-# ggplot(MBL_t, aes(x=`Number of hubs per sample`, y=`p-value`, color = Method, group = Method)) + geom_line() + theme_bw() +
-#   scale_x_discrete(breaks=seq(5,500,50)) + geom_hline(yintercept=0.05) + scale_y_continuous(breaks=c(0.05, 0.25, 0.5, 0.75,1))
-# dev.off()
-# 
+rownames(p_values_HGG) <- c('LIONESS', 'SSN', 'ssPCC', 'CSN', 'SSPGI')
+HGG_t <- as.data.frame(p_values_HGG)
+HGG_t$method <-row.names(HGG_t)
+HGG_t <- melt(HGG_t); colnames(HGG_t) <- c('Method', 'Number of hubs per sample', 'p-value')
+
+pdf('../results/top200_connected_nodes/brain/HGG_p_values.pdf')
+ggplot(HGG_t, aes(x=`Number of hubs per sample`, y=`p-value`, color = Method, group = Method)) + geom_line() + theme_bw() +
+  scale_x_discrete(breaks=seq(0,200,10)) + geom_hline(yintercept=0.05) + scale_y_continuous(breaks=c(0.05, 0.25, 0.5, 0.75,1))
+dev.off()
+
+rownames(p_values_MBL) <- c('LIONESS', 'SSN', 'ssPCC', 'CSN', 'SSPGI')
+MBL_t <- as.data.frame(p_values_MBL)
+MBL_t$method <-row.names(MBL_t)
+MBL_t <- melt(MBL_t); colnames(MBL_t) <- c('Method', 'Number of hubs per sample', 'p-value')
+
+pdf('../results/top200_connected_nodes/brain/MBL_p_values.pdf')
+ggplot(MBL_t, aes(x=`Number of hubs per sample`, y=`p-value`, color = Method, group = Method)) + geom_line() + theme_bw() +
+  scale_x_discrete(breaks=seq(0,200,10)) + geom_hline(yintercept=0.05) + scale_y_continuous(breaks=c(0.05, 0.25, 0.5, 0.75,1))
+dev.off()
+

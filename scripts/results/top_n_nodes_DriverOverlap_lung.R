@@ -14,16 +14,9 @@ library(stringr)
 library(ggvenn)
 library(ggpubr)
 
-setwd('/home/boris/Documents/PhD/single_sample/networks')
-base <- '/home/boris/Documents/PhD/single_sample/networks/'
-
-aggregate <- fread('./aggregate/bulk_network_lung_PCC_no_doubles_no_loops_HumanNet.csv', fill = TRUE, header = TRUE, data.table = FALSE) #Should we use the complete aggregate network or the top 25k edges?
-aggregate$reg <- convertToSymbol(aggregate$reg)
-aggregate$tar <- convertToSymbol(aggregate$tar)
-HumanNet_genes <- unique(as.vector(as.matrix(aggregate[,c(1,2)])))
-tmp1 <- intersect(HumanNet_genes, NSCLC_drivers$Symbol)
-tmp2 <- intersect(HumanNet_genes, SCLC_drivers$Symbol)
-length(union(tmp1, tmp2))
+################################################################################################################
+#### Functions
+################################################################################################################
 
 convertToSymbol <- function(top200list){
   top200list <- str_replace(top200list, "\\s.*","")
@@ -85,6 +78,7 @@ overlapWithDrivers <- function(top200list, cancerType, driverlist){
     HumanNet_genes <- unique(as.vector(as.matrix(aggregate[,c(1,2)])))
   } 
   
+  
   # all_drivers <- fread('./Census_all-Jun_1_2022-10_08.tsv')[,1]
   # all_drivers <- all_drivers[all_drivers$`Gene Symbol` %in% HumanNet_genes, ] # Genes not present in the network cannot be identified as hubs, so leave those out
   gene_list <- list(All_genes = HumanNet_genes, Method_specific = nodes, Subtype_specific = driverlist$Symbol)
@@ -100,28 +94,83 @@ test_hyper <- function(method, driverlist, samples){
   # method <- SSN_lung
   # samples <- SCLC_samples
   # driverlist <- SCLC_drivers
+  
   names(method) <- gsub('X', '', names(method))
   method <- method[names(method) %in% samples$DepMap_ID]
+  drivers_in_network <- intersect(driverlist$Symbol, HumanNet_genes)
   hubs <- unique(unlist(unname(method))) 
-  succes <- intersect(hubs, driverlist$Symbol)
-  possible_successes <- driverlist$Symbol
-  population_possible_sucesses <- length(HumanNet_genes) - length(driverlist$Symbol)
-  hubs
+  # succes <- intersect(hubs, drivers_in_network)
+  # possible_successes <- drivers_in_network
+  # population_possible_sucesses <- length(HumanNet_genes) - length(drivers_in_network)
+  #hubs
   
-  #H0: by ranodom chance, the overlap between hub genes and drivers would be no greater than our observation
-  #H1: We observe more overlap between hub genes and drivers than would be expected from random chance
+  # Calculate hypergeometric test p-value
+  total_genes <- length(HumanNet_genes)  # Total number of genes in your dataset
+  #total_genes <- length(all_drivers) # If you want to enrich against a background of known cancer driver genes instead of against the network
   
-  test <- phyper(length(succes), length(possible_successes), population_possible_sucesses, length(hubs))
+  driver_genes <- length(drivers_in_network)  # Number of known driver genes
   
-  return(test)
+  hub_gene_count <- length(hubs)  # Number of hub genes
+  overlap_count <- length(intersect(hubs, drivers_in_network))  # Number of overlapping genes
+  
+  res <- list()
+  
+  # Calculate expected overlap by chance
+  expected_overlap <- driver_genes * (hub_gene_count / total_genes)
+  
+  # Calculate fold change
+  res$fold_change <- overlap_count / expected_overlap
+  
+  # Calculate hypergeometric test p-value
+  res$test <- phyper(overlap_count - 1, driver_genes, total_genes - driver_genes, hub_gene_count, lower.tail = FALSE)
+  
+  #return(test)
+  return(res)
 }
 
+################################################################################################################
+#### Analysis
+################################################################################################################
+
+setwd('/home/boris/Documents/PhD/single_sample/networks')
+base <- '/home/boris/Documents/PhD/single_sample/networks/'
+
+aggregate <- fread('./aggregate/bulk_network_lung_PCC_no_doubles_no_loops_HumanNet.csv', fill = TRUE, header = TRUE, data.table = FALSE) #Should we use the complete aggregate network or the top 25k edges?
+aggregate$reg <- convertToSymbol(aggregate$reg)
+aggregate$tar <- convertToSymbol(aggregate$tar)
+
+# Now check enrichment for known drivers
+SCLC_drivers_intogen <- fread('./IntOGen-DriverGenes_SCLC.tsv')[,1]
+NSCLC_drivers_intogen <- fread('./IntOGen-DriverGenes_NSCLC.tsv')[,1]
+SCLC_drivers_census <- fread('./Census_SCLC_19_06_2023.tsv')[,1]
+NSCLC_drivers_census <- fread('./Census_NSCLC_19_06_2023.tsv')[,1]
+
+SCLC_drivers <- rbind(SCLC_drivers_intogen, SCLC_drivers_census, use.names=FALSE)
+NSCLC_drivers <- rbind(NSCLC_drivers_intogen, NSCLC_drivers_census, use.names=FALSE)
+
+all_drivers_intogen <- fread('./IntOGen-DriverGenes_all.tsv')[,1]
+all_drivers_census <- fread('./Census_all_23_06_2023.tsv')[,1]
+all_drivers <- rbind(all_drivers_intogen, all_drivers_census, use.names=FALSE)
+
+
+HumanNet_genes <- unique(as.vector(as.matrix(aggregate[,c(1,2)])))
+tmp1 <- intersect(HumanNet_genes, NSCLC_drivers$Symbol)
+tmp2 <- intersect(HumanNet_genes, SCLC_drivers$Symbol)
+length(union(tmp1, tmp2))
+
+
 # number_of_hubs <- seq(5,500,10)
-number_of_hubs <- 200
+#number_of_hubs <- seq(1,200,5)
+number_of_hubs <- c(200)
 p_values_SCLC <- data.frame(matrix(nrow = 5, ncol=length(number_of_hubs)))
-rownames(p_values_SCLC) <- c('LIONESS_lung', 'SSN_lung', 'sPCC_lung', 'CSN_lung', 'SSPGI_lung'); colnames(p_values_SCLC) <- c(200)
+rownames(p_values_SCLC) <- c('LIONESS_lung', 'SSN_lung', 'ssPCC_lung', 'CSN_lung', 'SSPGI_lung'); colnames(p_values_SCLC) <- number_of_hubs
 p_values_NSCLC <- data.frame(matrix(nrow = 5, ncol=length(number_of_hubs)))
-rownames(p_values_NSCLC) <- c('LIONESS_lung', 'SSN_lung', 'sPCC_lung', 'CSN_lung', 'SSPGI_lung'); colnames(p_values_NSCLC) <- c(200)
+rownames(p_values_NSCLC) <- c('LIONESS_lung', 'SSN_lung', 'ssPCC_lung', 'CSN_lung', 'SSPGI_lung'); colnames(p_values_NSCLC) <- number_of_hubs
+
+fold_changes_SCLC <- data.frame(matrix(nrow = 5, ncol=length(number_of_hubs)))
+rownames(fold_changes_SCLC) <- c('LIONESS_lung', 'SSN_lung', 'ssPCC_lung', 'CSN_lung', 'SSPGI_lung'); colnames(fold_changes_SCLC) <- number_of_hubs
+fold_changes_NSCLC <- data.frame(matrix(nrow = 5, ncol=length(number_of_hubs)))
+rownames(fold_changes_NSCLC) <- c('LIONESS_lung', 'SSN_lung', 'ssPCC_lung', 'CSN_lung', 'SSPGI_lung'); colnames(fold_changes_NSCLC) <- number_of_hubs
 
 aggregate <- fread('./aggregate/bulk_network_lung_PCC_no_doubles_no_loops_HumanNet.csv', fill = TRUE, header = TRUE, data.table = FALSE) #Should we use the complete aggregate network or the top 25k edges?
 aggregate$reg <- convertToSymbol(aggregate$reg)
@@ -227,19 +276,15 @@ for (j in (1:length(number_of_hubs))){
   data_for_boxplot$group <- as.factor(data_for_boxplot$group)
   colnames(data_for_boxplot) <- c('Method(s)', 'Number of overlapping hubs', 'Group')
   cbbPalette <- c("#000000", "#E69F00", "#56B4E9", "#009E73", "#F0E442", "#0072B2", "#D55E00", "#CC79A7")
-  pdf(paste0('../results/top200_connected_nodes/lung/Top_',k,'_connected_nodes_lung_overlap.pdf'))
-  print(ggplot(data_for_boxplot, aes(x = `Method(s)`, y=`Number of overlapping hubs`, fill = Group)) + geom_boxplot() +
-          ggtitle('Overlap between the top 200 most connected nodes') + scale_colour_manual(values=cbbPalette) +
-          theme(plot.title = element_text(hjust = 0.5), axis.text.x = element_text(angle=45, hjust=1, size = 6), 
-                panel.background = element_rect(fill = 'white', colour = 'white'),
-                # panel.grid.minor = element_line(size=0.2, linetype='solid', colour='black'), 
-                panel.grid.major = element_line(size=0.1, linetype='solid', colour='grey'),
-                axis.line = element_line(size = 0.5, linetype = 'solid', colour = 'black'))) 
-  dev.off()
-
-  # Now check enrichment for known drivers
-  SCLC_drivers <- fread('./IntOGen-DriverGenes_SCLC.tsv')[,1]
-  NSCLC_drivers <- fread('./IntOGen-DriverGenes_NSCLC.tsv')[,1]
+  # pdf(paste0('../results/top200_connected_nodes/lung/Boxplots/Top_',k,'_connected_nodes_lung_overlap.pdf'))
+  # print(ggplot(data_for_boxplot, aes(x = `Method(s)`, y=`Number of overlapping hubs`, fill = Group)) + geom_boxplot() +
+  #         ggtitle('Overlap between the top 200 most connected nodes') + scale_colour_manual(values=cbbPalette) +
+  #         theme(plot.title = element_text(hjust = 0.5), axis.text.x = element_text(angle=45, hjust=1, size = 6), 
+  #               panel.background = element_rect(fill = 'white', colour = 'white'),
+  #               # panel.grid.minor = element_line(size=0.2, linetype='solid', colour='black'), 
+  #               panel.grid.major = element_line(size=0.1, linetype='solid', colour='grey'),
+  #               axis.line = element_line(size = 0.5, linetype = 'solid', colour = 'black'))) 
+  # dev.off()
   
   # Read in sample metadata and group samples based on subtype
   sample_metadata <- fread('20Q4_v2_sample_info.csv')[,c(1,24)]
@@ -256,9 +301,9 @@ for (j in (1:length(number_of_hubs))){
   ssPCC_SCLC <- overlapWithDrivers(iENA_lung, type, SCLC_drivers)
   SSPGI_SCLC <- overlapWithDrivers(SSPGI_lung, type, SCLC_drivers)
   
-  pdf(paste0('../results/top200_connected_nodes/lung/',type,'_top', k, 'nodes_driverOverlap.pdf'))
-  print(ggarrange(SSN_SCLC, LIONESS_SCLC, ssPCC_SCLC, CSN_SCLC, SSPGI_SCLC, nrow=3, ncol=2, labels = c('SSN', 'LIONESS', 'iENA', 'CSN', 'SSPGI'), font.label = list(size = 8)))
-  dev.off()
+  # pdf(paste0('../results/top200_connected_nodes/lung/Venn/',type,'_top', k, 'nodes_driverOverlap.pdf'))
+  # print(ggarrange(SSN_SCLC, LIONESS_SCLC, ssPCC_SCLC, CSN_SCLC, SSPGI_SCLC, nrow=3, ncol=2, labels = c('SSN', 'LIONESS', 'iENA', 'CSN', 'SSPGI'), font.label = list(size = 8)))
+  # dev.off()
   
   # Once for NSCLC and once for SCLC
   type <- 'NSCLC'
@@ -269,25 +314,48 @@ for (j in (1:length(number_of_hubs))){
   ssPCC_NSCLC <- overlapWithDrivers(iENA_lung, type, NSCLC_drivers)
   SSPGI_NSCLC <- overlapWithDrivers(SSPGI_lung, type, NSCLC_drivers)
   
-  pdf(paste0('../results/top200_connected_nodes/lung/',type,'_top', k, 'nodes_driverOverlap.pdf'))
-  print(ggarrange(SSN_NSCLC, LIONESS_NSCLC, ssPCC_NSCLC, CSN_NSCLC, SSPGI_NSCLC, nrow=3, ncol=2, labels = c('SSN', 'LIONESS', 'iENA', 'CSN', 'SSPGI'), font.label = list(size = 8)))
-  dev.off()
+  # pdf(paste0('../results/top200_connected_nodes/lung/Venn/',type,'_top', k, 'nodes_driverOverlap.pdf'))
+  # print(ggarrange(SSN_NSCLC, LIONESS_NSCLC, ssPCC_NSCLC, CSN_NSCLC, SSPGI_NSCLC, nrow=3, ncol=2, labels = c('SSN', 'LIONESS', 'iENA', 'CSN', 'SSPGI'), font.label = list(size = 8)))
+  # dev.off()
   
   # Now test enrichment under a hypergeometric distribution for both SCLC and NSCLC
-  p_values_SCLC['LIONESS_lung', j] <- test_hyper(LIONESS_lung, SCLC_drivers, SCLC_samples)
-  p_values_SCLC['SSN_lung', j] <- test_hyper(SSN_lung, SCLC_drivers, SCLC_samples)
-  p_values_SCLC['ssPCC_lung', j] <- test_hyper(iENA_lung, SCLC_drivers, SCLC_samples)
-  p_values_SCLC['CSN_lung', j] <- test_hyper(CSN_lung, SCLC_drivers, SCLC_samples)
-  p_values_SCLC['SSPGI_lung', j] <- test_hyper(SSPGI_lung, SCLC_drivers, SCLC_samples)
+  p_values_SCLC['LIONESS_lung', j] <- test_hyper(LIONESS_lung, SCLC_drivers, SCLC_samples)$test
+  p_values_SCLC['SSN_lung', j] <- test_hyper(SSN_lung, SCLC_drivers, SCLC_samples)$test
+  p_values_SCLC['ssPCC_lung', j] <- test_hyper(iENA_lung, SCLC_drivers, SCLC_samples)$test
+  p_values_SCLC['CSN_lung', j] <- test_hyper(CSN_lung, SCLC_drivers, SCLC_samples)$test
+  p_values_SCLC['SSPGI_lung', j] <- test_hyper(SSPGI_lung, SCLC_drivers, SCLC_samples)$test
   
-  p_values_NSCLC['LIONESS_lung', j] <- test_hyper(LIONESS_lung, NSCLC_drivers, NSCLC_samples)
-  p_values_NSCLC['SSN_lung', j] <- test_hyper(SSN_lung, NSCLC_drivers, NSCLC_samples)
-  p_values_NSCLC['ssPCC_lung', j] <- test_hyper(iENA_lung, NSCLC_drivers, NSCLC_samples)
-  p_values_NSCLC['CSN_lung', j] <- test_hyper(CSN_lung, NSCLC_drivers, NSCLC_samples)
-  p_values_NSCLC['SSPGI_lung', j] <- test_hyper(SSPGI_lung, NSCLC_drivers, NSCLC_samples)
+  p_values_NSCLC['LIONESS_lung', j] <- test_hyper(LIONESS_lung, NSCLC_drivers, NSCLC_samples)$test
+  p_values_NSCLC['SSN_lung', j] <- test_hyper(SSN_lung, NSCLC_drivers, NSCLC_samples)$test
+  p_values_NSCLC['ssPCC_lung', j] <- test_hyper(iENA_lung, NSCLC_drivers, NSCLC_samples)$test
+  p_values_NSCLC['CSN_lung', j] <- test_hyper(CSN_lung, NSCLC_drivers, NSCLC_samples)$test
+  p_values_NSCLC['SSPGI_lung', j] <- test_hyper(SSPGI_lung, NSCLC_drivers, NSCLC_samples)$test
+  
+  
+  # Now test enrichment under a hypergeometric distribution for both SCLC and NSCLC and report fold change, just do the test twice, doesn't take long
+  fold_changes_SCLC['LIONESS_lung', j] <- test_hyper(LIONESS_lung, SCLC_drivers, SCLC_samples)$fold_change
+  fold_changes_SCLC['SSN_lung', j] <- test_hyper(SSN_lung, SCLC_drivers, SCLC_samples)$fold_change
+  fold_changes_SCLC['ssPCC_lung', j] <- test_hyper(iENA_lung, SCLC_drivers, SCLC_samples)$fold_change
+  fold_changes_SCLC['CSN_lung', j] <- test_hyper(CSN_lung, SCLC_drivers, SCLC_samples)$fold_change
+  fold_changes_SCLC['SSPGI_lung', j] <- test_hyper(SSPGI_lung, SCLC_drivers, SCLC_samples)$fold_change
+  
+  fold_changes_NSCLC['LIONESS_lung', j] <- test_hyper(LIONESS_lung, NSCLC_drivers, NSCLC_samples)$fold_change
+  fold_changes_NSCLC['SSN_lung', j] <- test_hyper(SSN_lung, NSCLC_drivers, NSCLC_samples)$fold_change
+  fold_changes_NSCLC['ssPCC_lung', j] <- test_hyper(iENA_lung, NSCLC_drivers, NSCLC_samples)$fold_change
+  fold_changes_NSCLC['CSN_lung', j] <- test_hyper(CSN_lung, NSCLC_drivers, NSCLC_samples)$fold_change
+  fold_changes_NSCLC['SSPGI_lung', j] <- test_hyper(SSPGI_lung, NSCLC_drivers, NSCLC_samples)$fold_change
   
   write.table(p_values_SCLC, '../results/top200_connected_nodes/lung/p_values_SCLC.txt', row.names = TRUE, sep = '\t', quote = FALSE)
   write.table(p_values_NSCLC, '../results/top200_connected_nodes/lung/p_values_NSCLC.txt', row.names = TRUE, sep = '\t', quote = FALSE)
+
+  write.table(fold_changes_SCLC, '../results/top200_connected_nodes/lung/fold_changes_SCLC.txt', row.names = TRUE, sep = '\t', quote = FALSE)
+  write.table(fold_changes_NSCLC, '../results/top200_connected_nodes/lung/fold_changes_NSCLC.txt', row.names = TRUE, sep = '\t', quote = FALSE)
+  
+  # write.table(p_values_SCLC, '../results/top200_connected_nodes/lung/p_values_SCLC_vs_allDrivers.txt', row.names = TRUE, sep = '\t', quote = FALSE)
+  # write.table(p_values_NSCLC, '../results/top200_connected_nodes/lung/p_values_NSCLC_vs_allDrivers.txt', row.names = TRUE, sep = '\t', quote = FALSE)
+  # 
+  # write.table(fold_changes_SCLC, '../results/top200_connected_nodes/lung/fold_changes_SCLC_vs_allDrivers.txt', row.names = TRUE, sep = '\t', quote = FALSE)
+  # write.table(fold_changes_NSCLC, '../results/top200_connected_nodes/lung/fold_changes_NSCLC_vs_allDrivers.txt', row.names = TRUE, sep = '\t', quote = FALSE)
 }
 
 save.image('../results/top200_connected_nodes/lung/results_top200.RData')
@@ -317,28 +385,28 @@ overlap_within_subtype(CSN_lung)
 overlap_within_subtype(SSPGI_lung)
 
 # load('../results/top200_connected_nodes/lung/results5_500.RData')
-# p_values_NSCLC <- fread('../results/top200_connected_nodes/lung/p_values_NSCLC.txt', header=FALSE)
-# p_values_NSCLC <- fread('../results/top200_connected_nodes/lung/p_values_NSCLC.txt', header=FALSE)
-# # Create plot of p-values per subtype
-# rownames(p_values_NSCLC) <- c('LIONESS', 'SSN', 'ssPCC', 'CSN', 'SSPGI')
-# NSCLC_t <- as.data.frame(p_values_NSCLC)
-# NSCLC_t$method <-row.names(NSCLC_t)
-# NSCLC_t <- melt(NSCLC_t); colnames(NSCLC_t) <- c('Method', 'Number of hubs per sample', 'p-value')
-# 
-# pdf('../results/top200_connected_nodes/lung/NSCLC_p_values.pdf')
-# ggplot(NSCLC_t, aes(x=`Number of hubs per sample`, y=`p-value`, color = Method, group = Method)) + geom_line() + theme_bw() +
-#   scale_x_discrete(breaks=seq(5,500,50)) + geom_hline(yintercept=0.05) + scale_y_continuous(breaks=c(0.05, 0.25, 0.5, 0.75, 1))
-# dev.off()
-# 
-# rownames(p_values_SCLC) <- c('LIONESS', 'SSN', 'ssPCC', 'CSN', 'SSPGI')
-# SCLC_t <- as.data.frame(p_values_SCLC)
-# SCLC_t$method <-row.names(SCLC_t)
-# SCLC_t <- melt(SCLC_t); colnames(SCLC_t) <- c('Method', 'Number of hubs per sample', 'p-value')
-# 
-# pdf('../results/top200_connected_nodes/lung/SCLC_p_values.pdf')
-# ggplot(SCLC_t, aes(x=`Number of hubs per sample`, y=`p-value`, color = Method, group = Method)) + geom_line() + theme_bw() +
-#   scale_x_discrete(breaks=seq(5,500,50)) + geom_hline(yintercept=0.05) + scale_y_continuous(breaks=c(0.05, 0.25, 0.5, 0.75, 1))
-# dev.off()
+#p_values_NSCLC <- fread('../results/top200_connected_nodes/lung/p_values_NSCLC.txt', header=FALSE)
+#p_values_SCLC <- fread('../results/top200_connected_nodes/lung/p_values_SCLC.txt', header=FALSE)
+# Create plot of p-values per subtype
+rownames(p_values_NSCLC) <- c('LIONESS', 'SSN', 'ssPCC', 'CSN', 'SSPGI')
+NSCLC_t <- as.data.frame(p_values_NSCLC)
+NSCLC_t$method <-row.names(NSCLC_t)
+NSCLC_t <- melt(NSCLC_t); colnames(NSCLC_t) <- c('Method', 'Number of hubs per sample', 'p-value')
+
+pdf('../results/top200_connected_nodes/lung/NSCLC_p_values.pdf')
+ggplot(NSCLC_t, aes(x=`Number of hubs per sample`, y=`p-value`, color = Method, group = Method)) + geom_line() + theme_bw() +
+  scale_x_discrete(breaks=seq(1,200,1)) + geom_hline(yintercept=0.05) + scale_y_continuous(breaks=c(0.05, 0.25, 0.5, 0.75, 1))
+dev.off()
+
+rownames(p_values_SCLC) <- c('LIONESS', 'SSN', 'ssPCC', 'CSN', 'SSPGI')
+SCLC_t <- as.data.frame(p_values_SCLC)
+SCLC_t$method <-row.names(SCLC_t)
+SCLC_t <- melt(SCLC_t); colnames(SCLC_t) <- c('Method', 'Number of hubs per sample', 'p-value')
+
+pdf('../results/top200_connected_nodes/lung/SCLC_p_values.pdf')
+ggplot(SCLC_t, aes(x=`Number of hubs per sample`, y=`p-value`, color = Method, group = Method)) + geom_line() + theme_bw() +
+  scale_x_discrete(breaks=seq(5,500,50)) + geom_hline(yintercept=0.05) + scale_y_continuous(breaks=c(0.05, 0.25, 0.5, 0.75, 1))
+dev.off()
 
 
           
