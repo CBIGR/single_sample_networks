@@ -2,7 +2,7 @@
 Code accompanying the paper "Evaluation of single-sample network inference methods for precision oncology" 
 
 ## Folder resources 
-- Driver genes per cancer subtype, downloaded from [IntOGen](https://www.intogen.org/search) database, HumanNet-XN network, downloaded from [HumanNetv2](http://www.inetbio.org/humannet/), and the preprocessed expression data for lung and brain.
+- Driver genes per cancer subtype, downloaded from [IntOGen](https://www.intogen.org/search) and [COSMIC] (https://cancer.sanger.ac.uk/cosmic) databases, HumanNet-XN network, downloaded from [HumanNetv2](http://www.inetbio.org/humannet/), and the preprocessed expression data for lung and brain.
 
 ## Folder scripts
 Scripts used to create the results in this paper. 
