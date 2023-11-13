@@ -1,0 +1,360 @@
+---
+title: "paper_spearman_corr"
+author: "Joke Deschildre"
+date: "19 april 2021"
+output: html_document
+---
+
+---
+title: "spearman correlation"
+author: "Joke Deschildre"
+date: "26 mei 2020"
+output: html_document
+---
+
+```{r message=F}
+library(data.table)
+library(gtools)
+library(reshape2)
+library(ggplot2)
+library(RColorBrewer)
+library(ComplexHeatmap)
+library(circlize)
+library(corrplot)
+library(stringr)
+library(DESeq2)
+library(edgeR)
+```
+read in expression brain data 
+```{r}
+expr_df <- fread("C:/Users/joked/OneDrive - UGent/PhD Joke shared/paper sample specific benchmarking/data/preprocessing/JDS_brain_expression_2_75_var_only_names.csv", data.table=F, header=T)
+row.names(expr_df) <- expr_df[,1]
+expr_df[,1] <- NULL 
+sample_names <- colnames(expr_df)
+expr_df
+```
+read in expression lung data 
+```{r}
+expr_df_l <- fread("C:/Users/joked/OneDrive - UGent/PhD Joke shared/paper sample specific benchmarking/data/preprocessing/JDS_lung_expression_2_75_var_only_names.csv", data.table=F, header=T)
+row.names(expr_df_l) <- expr_df_l[,1]
+expr_df_l[,1] <- NULL 
+sample_names <- colnames(expr_df_l)
+expr_df_l
+```
+
+Also reading in the sample info (annotations from DepMap website)
+```{r}
+sample_info <- read.csv('C:/Users/joked/OneDrive - UGent/PhD Joke shared/paper sample specific benchmarking/data/20Q4 v2/20Q4_v2_sample_info.csv', header=TRUE, sep=",", fill=TRUE)
+sample_info
+```
+sample info of the brain samples IN THE SAME ORDER!!! (with match function)
+```{r}
+cell_lines <- paste("ACH-00", colnames(expr_df), sep="")
+cell_line_sample_info <- sample_info[match(cell_lines, sample_info$DepMap_ID) ,] 
+cell_line_sample_info
+#write.table(cell_line_sample_info, 'C:/Users/joked/OneDrive - UGent/PhD Joke shared/paper sample specific benchmarking/data/20Q4 v2/20Q4_v2_sample_info_BRAIN.csv', row.names=FALSE, col.names=TRUE)
+
+cell_lines_l <- paste("ACH-00", colnames(expr_df_l), sep="")
+cell_line_sample_info_l <- sample_info[match(cell_lines_l, sample_info$DepMap_ID) ,] 
+cell_line_sample_info_l
+#write.table(cell_line_sample_info_l, 'C:/Users/joked/OneDrive - UGent/PhD Joke shared/paper sample specific benchmarking/data/20Q4 v2/20Q4_v2_sample_info_LUNG.csv', row.names=FALSE, col.names=TRUE)
+```
+
+
+Explore spearman correlation measure on the expression data. 
+```{r}
+cor(expr_df[,1], expr_df[,2], method = "spearman")
+cor(expr_df[,1], expr_df[,2], method = "pearson")
+```
+
+calculate spearman correlation for all possible combinations of samples.
+```{r}
+spearman_matrix <- cor(expr_df, method="spearman")
+#all.equal(spearman_matrix, spearman_matrix2) # SO NO NEED FOR THE FOR LOOP!!!!!!!!!!!!!! 
+
+min(spearman_matrix)
+max(spearman_matrix)
+mean(spearman_matrix)
+
+spearman_matrix_l <- cor(expr_df_l, method="spearman")
+#all.equal(spearman_matrix, spearman_matrix2) # SO NO NEED FOR THE FOR LOOP!!!!!!!!!!!!!! 
+
+min(spearman_matrix_l)
+max(spearman_matrix_l)
+mean(spearman_matrix_l)
+```
+
+
+Calcultate Z-score of the Spearman correlation 
+```{r}
+mu <- mean(spearman_matrix)
+sigma <- sd(spearman_matrix)
+zscore_matrix <- apply(spearman_matrix, c(1,2), function(x) (x-mu)/sigma) # calculating the z-score for all matrix elements 
+
+min(zscore_matrix)
+max(zscore_matrix)
+
+mu_l <- mean(spearman_matrix_l)
+sigma_l <- sd(spearman_matrix_l)
+zscore_matrix_l <- apply(spearman_matrix_l, c(1,2), function(x) (x-mu_l)/sigma_l) # calculating the z-score for all matrix elements 
+
+min(zscore_matrix_l)
+max(zscore_matrix_l)
+```
+
+
+
+Build heatmaps with the 'ComplexHeatmap' package. 
+```{r}
+row.names(spearman_matrix) <-colnames(expr_df)
+colnames(spearman_matrix) <- colnames(expr_df)
+row.names(zscore_matrix) <-colnames(expr_df)
+colnames(zscore_matrix) <- colnames(expr_df)
+
+row.names(spearman_matrix_l) <-colnames(expr_df_l)
+colnames(spearman_matrix_l) <- colnames(expr_df_l)
+row.names(zscore_matrix_l) <-colnames(expr_df_l)
+colnames(zscore_matrix_l) <- colnames(expr_df_l)
+
+```
+
+```{r}
+culture_type <- cell_line_sample_info$culture_type 
+culture_type[cell_line_sample_info$culture_type==""]<-"unknown" #change the empty place to "unkown" to be able to plot it in the legend 
+
+culture_type_l <- cell_line_sample_info_l$culture_type 
+culture_type_l[cell_line_sample_info_l$culture_type==""]<-"unknown" #change the empty place to "unkown" to be able to plot it in the legend 
+```
+
+
+```{r}
+
+row_ha1 = rowAnnotation(disease_subtype = cell_line_sample_info$Subtype, show_annotation_name = FALSE, col = list(disease_subtype = c("Astrocytoma" = "blue", "Glioblastoma" = "sky blue", "Glioma" = "orange3", "Medulloblastoma" = "chartreuse", "Oligodendroglioma" = "gold", "Meningioma"="forestgreen", "Primitive Neuroectodermal Tumor (PNET)"="deeppink")), annotation_label="Disease subtype")
+row_ha2 = rowAnnotation(sex = cell_line_sample_info$sex, show_annotation_name = FALSE)
+row_ha3 = rowAnnotation(source = cell_line_sample_info$source, show_annotation_name = FALSE)
+row_ha4 = rowAnnotation(lineage= cell_line_sample_info$lineage, show_annotation_name = FALSE)
+row_ha5 = rowAnnotation(lineage_subtype = cell_line_sample_info$lineage_subtype, show_annotation_name = FALSE)
+row_ha6 = rowAnnotation(culture_type = culture_type, show_annotation_name = FALSE)
+
+
+col_fun = colorRamp2(c(-2, 0, 2), c("steelblue4", "white", "firebrick1")) # choose the colors for the heatmap 
+col_fun(seq(-16, 16)) #how much different colors should be visible 
+
+hm <- Heatmap(zscore_matrix,  name="Spearman correlation (Z-score)",clustering_distance_rows = "spearman", clustering_distance_columns = "spearman", clustering_method_rows = "ward.D",clustering_method_columns = "ward.D", width = unit(15, "cm"), height = unit(15, "cm"), left_annotation = c(row_ha1), col=col_fun, row_dend_width = unit(2, "cm"), row_names_gp = gpar(fontsize = 7), column_names_gp = gpar(fontsize = 7), show_column_dend = FALSE) # the plot 
+
+jpeg("C:/Users/joked/OneDrive - UGent/PhD Joke shared/paper sample specific benchmarking/Results/Figures/Expression_Heatmap_Z_score_Spearman_brain.jpeg", width=13, height=8, units="in", res=300)
+draw(hm, merge_legend = TRUE) # merge legend so all the legend parts are shown vertically  
+dev.off()
+```
+
+```{r}
+hm <- Heatmap(spearman_matrix,  name="Spearman correlation",clustering_distance_rows = "manhattan", clustering_distance_columns = "manhattan", clustering_method_rows = "ward.D", clustering_method_columns = "ward.D", width = unit(15, "cm"), height = unit(15, "cm"), left_annotation = c(row_ha1, row_ha2, row_ha3, row_ha4, row_ha5 ),col=col_fun, column_dend_height = unit(2, "cm"), row_dend_width = unit(2, "cm"), row_names_gp = gpar(fontsize = 10), column_names_gp = gpar(fontsize = 10)) # the plot 
+
+draw(hm, merge_legend = TRUE) # merge legend so all the legend parts are shown vertically 
+```
+
+```{r}
+lineage_subtype <-  cell_line_sample_info_l$lineage_subtype
+lineage_subtype <-  str_replace(lineage_subtype, "lung_carcinoid", "Lung carcinoid")
+lineage_subtype <-  str_replace(lineage_subtype, "NSCLC", "Non small cell lung cancer")
+lineage_subtype <-  str_replace(lineage_subtype, "SCLC", "Small cell lung cancer")
+
+#row_ha1_l = rowAnnotation(disease_subtype = cell_line_sample_info_l$Subtype, show_annotation_name = FALSE)
+row_ha2_l = rowAnnotation(sex = cell_line_sample_info_l$sex, show_annotation_name = FALSE)
+row_ha3_l = rowAnnotation(source = cell_line_sample_info_l$source, show_annotation_name = FALSE)
+row_ha4_l = rowAnnotation(lineage= cell_line_sample_info_l$lineage, show_annotation_name = FALSE)
+row_ha5_l = rowAnnotation(disease_subtype = lineage_subtype, show_annotation_name = FALSE, col = list(disease_subtype = c("Small cell lung cancer" = "sky blue", "Non small cell lung cancer" = "forestgreen", "Lung carcinoid" = "deeppink")), annotation_label="Disease subtype")
+row_ha6_l = rowAnnotation(culture_type = culture_type_l, show_annotation_name = FALSE)
+
+
+col_fun = colorRamp2(c(-2, 0, 2), c("steelblue4", "white", "firebrick1")) # choose the colors for the heatmap 
+col_fun(seq(-16, 16)) #how much different colors should be visible 
+
+hm <- Heatmap(zscore_matrix_l,  name="Spearman correlation",clustering_distance_rows = "manhattan", clustering_distance_columns = "manhattan", clustering_method_rows = "ward.D", clustering_method_columns = "ward.D", width = unit(15, "cm"), height = unit(15, "cm"), left_annotation = c(row_ha5_l), col=col_fun, column_dend_height = unit(2, "cm"), row_dend_width = unit(2, "cm"), row_names_gp = gpar(fontsize = 6), column_names_gp = gpar(fontsize =6), show_column_dend = FALSE) # the plot 
+
+jpeg("C:/Users/joked/OneDrive - UGent/PhD Joke shared/paper sample specific benchmarking/Results/Figures/Expression_Heatmap_Z_score_Spearman_lung.jpeg", width=13, height=8, units="in", res=300)
+draw(hm, merge_legend = TRUE) # merge legend so all the legend parts are shown vertically  
+dev.off()  
+```
+
+```{r}
+pearson_matrix <- cor(expr_df, method="pearson")
+
+hm <- Heatmap(pearson_matrix,  name="Spearman correlation",clustering_distance_rows = "manhattan", clustering_distance_columns = "manhattan", clustering_method_rows = "ward.D", clustering_method_columns = "ward.D", width = unit(15, "cm"), height = unit(15, "cm"), left_annotation = c(row_ha1, row_ha2, row_ha3, row_ha4, row_ha5 ),col=col_fun, column_dend_height = unit(2, "cm"), row_dend_width = unit(2, "cm"), row_names_gp = gpar(fontsize = 10), column_names_gp = gpar(fontsize = 10)) # the plot 
+
+draw(hm, merge_legend = TRUE) # merge legend so all the legend parts are shown vertically 
+```
+```{r}
+mu <- mean(pearson_matrix)
+sigma <- sd(pearson_matrix)
+zscore_pearson_matrix <- apply(pearson_matrix, c(1,2), function(x) (x-mu)/sigma) # calculating the z-score for all matrix elements 
+
+hm <- Heatmap(zscore_pearson_matrix,  name="Spearman correlation",clustering_distance_rows = "manhattan", clustering_distance_columns = "manhattan", clustering_method_rows = "ward.D", clustering_method_columns = "ward.D", width = unit(14, "cm"), height = unit(14, "cm"), left_annotation = c(row_ha1, row_ha2, row_ha3, row_ha4, row_ha5 ),col=col_fun, column_dend_height = unit(1.5, "cm"), row_dend_width = unit(1.5, "cm"), row_names_gp = gpar(fontsize = 8), column_names_gp = gpar(fontsize = 8)) # the plot 
+
+draw(hm, merge_legend = TRUE) # merge legend so all the legend parts are shown vertically
+```
+```{r}
+pearson_matrix_l <- cor(expr_df_l, method="pearson")
+mu_l <- mean(pearson_matrix_l)
+sigma_l <- sd(pearson_matrix_l)
+zscore_pearson_matrix_l <- apply(pearson_matrix_l, c(1,2), function(x) (x-mu_l)/sigma_l) # calculating the z-score for all matrix elements
+
+hm <- Heatmap(zscore_pearson_matrix_l,  name="Spearman correlation",clustering_distance_rows = "manhattan", clustering_distance_columns = "manhattan", clustering_method_rows = "ward.D", clustering_method_columns = "ward.D", width = unit(15, "cm"), height = unit(15, "cm"), left_annotation = c(row_ha1_l, row_ha2_l, row_ha3_l, row_ha4_l, row_ha5_l, row_ha6_l), col=col_fun, column_dend_height = unit(2, "cm"), row_dend_width = unit(2, "cm"), row_names_gp = gpar(fontsize = 10), column_names_gp = gpar(fontsize = 10)) # the plot 
+
+draw(hm, merge_legend = TRUE) # merge legend so all the legend parts are shown vertically  
+```
+
+
+
+```{r}
+Pearson_LIONESS_brain <- fread("C:/Users/joked/OneDrive - ugentbe/PhD Joke shared/scripts/network inference and validation/paper data and network exploration/pearson_corr_matrix_LIONESS_network.csv", data.table=F)
+rownames(Pearson_LIONESS_brain) <- paste("ACH-00", Pearson_LIONESS_brain[,1], sep="")
+colnames(Pearson_LIONESS_brain) <- paste("ACH-00", colnames(Pearson_LIONESS_brain), sep="")
+Pearson_LIONESS_brain[,1] <- NULL
+Spearman_LIONESS_brain <- fread("C:/Users/joked/OneDrive - ugentbe/PhD Joke shared/scripts/network inference and validation/paper data and network exploration/Spearman_corr_matrix_LIONESS_network.csv", data.table=F)
+rownames(Spearman_LIONESS_brain) <- paste("ACH-00", Spearman_LIONESS_brain[,1], sep="")
+colnames(Spearman_LIONESS_brain) <- paste("ACH-00", colnames(Spearman_LIONESS_brain), sep="")
+Spearman_LIONESS_brain[,1] <- NULL
+Spearman_LIONESS_brain
+```
+CONTROL FOR ORDER CELL LINES
+```{r}
+
+colnames(Pearson_LIONESS_brain) == rownames(Pearson_LIONESS_brain)
+cell_line_sample_info$DepMap_ID == rownames(Pearson_LIONESS_brain)
+colnames(Spearman_LIONESS_brain) == rownames(Spearman_LIONESS_brain)
+cell_line_sample_info$DepMap_ID == rownames(Spearman_LIONESS_brain)
+```
+```{r}
+rownames(Pearson_LIONESS_brain) <- str_remove( rownames(Pearson_LIONESS_brain), "ACH-00")
+colnames(Pearson_LIONESS_brain) <- str_remove( colnames(Pearson_LIONESS_brain), "ACH-00")
+rownames(Spearman_LIONESS_brain) <- str_remove( rownames(Pearson_LIONESS_brain), "ACH-00")
+colnames(Spearman_LIONESS_brain) <- str_remove( colnames(Spearman_LIONESS_brain), "ACH-00")
+```
+
+```{r}
+row_ha1b = rowAnnotation(disease_subtype = c(cell_line_sample_info$Subtype, "reference"), show_annotation_name = FALSE)
+row_ha2b = rowAnnotation(sex = c(cell_line_sample_info$sex, "reference"), show_annotation_name = FALSE)
+row_ha3b = rowAnnotation(source = c(cell_line_sample_info$source, "reference"), show_annotation_name = FALSE)
+row_ha4b = rowAnnotation(lineage= c(cell_line_sample_info$lineage, "reference"), show_annotation_name = FALSE)
+row_ha5b = rowAnnotation(lineage_subtype = c(cell_line_sample_info$lineage_subtype, "reference"), show_annotation_name = FALSE)
+
+
+hm <- Heatmap(Pearson_LIONESS_brain,  name="Pearson correlation LIONESS",clustering_distance_rows = "manhattan", clustering_distance_columns = "manhattan", clustering_method_rows = "ward.D", clustering_method_columns = "ward.D", width = unit(10, "cm"), height = unit(10, "cm"), left_annotation = c(row_ha1b, row_ha2b, row_ha3b, row_ha4b, row_ha5b ),col=col_fun, column_dend_height = unit(2, "cm"), row_dend_width = unit(2, "cm"), row_names_gp = gpar(fontsize = 10), column_names_gp = gpar(fontsize = 10)) # the plot 
+
+draw(hm, merge_legend = TRUE) # merge legend so all the legend parts are shown vertically 
+```
+```{r}
+hm <- Heatmap(Pearson_LIONESS_brain,  name="Pearson correlation LIONESS",clustering_distance_rows = "manhattan", clustering_distance_columns = "manhattan", clustering_method_rows = "ward.D", clustering_method_columns = "ward.D", width = unit(10, "cm"), height = unit(10, "cm"),left_annotation = c(row_ha1b, row_ha2b, row_ha3b, row_ha4b, row_ha5b ), col=col_fun, column_dend_height = unit(2, "cm"), row_dend_width = unit(2, "cm"), row_names_gp = gpar(fontsize = 7), column_names_gp = gpar(fontsize = 7)) # the plot 
+
+draw(hm, merge_legend = TRUE) # merge legend so all the legend parts are shown vertically 
+```
+```{r}
+mu <- mean(as.matrix(Pearson_LIONESS_brain))
+sigma <- sd(as.matrix(Pearson_LIONESS_brain))
+zscore_Pearson_LIONESS_brain <- apply(as.matrix(Pearson_LIONESS_brain), c(1,2), function(x) (x-mu)/sigma) # calculating the z-score for all matrix elements 
+
+hm <- Heatmap(zscore_Pearson_LIONESS_brain,  name="Pearson correlation LIONESS",clustering_distance_rows = "manhattan", clustering_distance_columns = "manhattan", clustering_method_rows = "ward.D", clustering_method_columns = "ward.D", width = unit(14, "cm"), height = unit(14, "cm"),left_annotation = c(row_ha1b, row_ha2b, row_ha3b, row_ha4b, row_ha5b ), col=col_fun, column_dend_height = unit(1.5, "cm"), row_dend_width = unit(1.5, "cm"), row_names_gp = gpar(fontsize = 8), column_names_gp = gpar(fontsize = 8)) # the plot 
+
+draw(hm, merge_legend = TRUE) # merge legend so all the legend parts are shown vertically 
+```
+```{r}
+#as.matrix(Pearson_LIONESS_brain)
+```
+
+```{r}
+
+```
+
+
+
+lung data 
+```{r}
+expr_df_lung <- fread("C:/Users/joked/OneDrive - ugentbe/PhD Joke shared/paper sample specific benchmarking/data/preprocessing/JDS_lung_expression_2_75_var_only_names.csv", data.table=F, header=T)
+row.names(expr_df_lung) <- expr_df_lung[,1]
+expr_df_lung[,1] <- NULL 
+sample_names_lung <- colnames(expr_df_lung)
+expr_df_lung
+```
+
+sample info of the lung samples IN THE SAME ORDER!!! (with match function)
+```{r}
+cell_lines_lung <- paste("ACH-00", colnames(expr_df_lung), sep="")
+cell_line_sample_info_lung <- sample_info[match(cell_lines_lung, sample_info$DepMap_ID) ,] 
+cell_line_sample_info_lung
+```
+
+calculate spearman correlation for all possible combinations of samples.
+```{r}
+spearman_matrix_lung <- cor(expr_df_lung, method="spearman")
+#all.equal(spearman_matrix, spearman_matrix2) # SO NO NEED FOR THE FOR LOOP!!!!!!!!!!!!!! 
+
+min(spearman_matrix_lung)
+max(spearman_matrix_lung)
+mean(spearman_matrix_lung)
+
+mu_lung <- mean(spearman_matrix_lung)
+sigma_lung <- sd(spearman_matrix_lung)
+zscore_matrix_lung <- apply(spearman_matrix_lung, c(1,2), function(x) (x-mu_lung)/sigma_lung) # calculating the z-score for all matrix elements 
+
+min(zscore_matrix_lung)
+max(zscore_matrix_lung )
+```
+
+Build heatmaps with the 'ComplexHeatmap' package. 
+```{r}
+row.names(spearman_matrix_lung) <-colnames(expr_df_lung)
+colnames(spearman_matrix_lung) <- colnames(expr_df_lung)
+row.names(zscore_matrix_lung) <-colnames(expr_df_lung)
+colnames(zscore_matrix_lung) <- colnames(expr_df_lung)
+
+```
+
+```{r}
+culture_type_lung <- cell_line_sample_info_lung$culture_type 
+culture_type_lung[cell_line_sample_info_lung$culture_type==""]<-"unknown" #change the empty place to "unkown" to be able to plot it in the legend 
+
+```
+
+
+```{r}
+
+row_ha1_lung = rowAnnotation(disease_subtype = cell_line_sample_info_lung$Subtype, show_annotation_name = FALSE)
+row_ha2_lung = rowAnnotation(sex = cell_line_sample_info_lung$sex, show_annotation_name = FALSE)
+row_ha3_lung = rowAnnotation(source = cell_line_sample_info_lung$source, show_annotation_name = FALSE)
+row_ha4_lung = rowAnnotation(lineage= cell_line_sample_info_lung$lineage, show_annotation_name = FALSE)
+row_ha5_lung = rowAnnotation(lineage_subtype = cell_line_sample_info_lung$lineage_subtype, show_annotation_name = FALSE)
+
+
+col_fun = colorRamp2(c(-1, 0, 1), c("steelblue4", "white", "firebrick1")) # choose the colors for the heatmap 
+col_fun(seq(-8, 8)) #how much different colors should be visible 
+
+hm <- Heatmap(zscore_matrix_lung,  name="Spearman correlation",clustering_distance_rows = "manhattan", clustering_distance_columns = "manhattan", clustering_method_rows = "ward.D", clustering_method_columns = "ward.D", width = unit(15, "cm"), height = unit(15, "cm"), left_annotation = c(row_ha1_lung, row_ha2_lung, row_ha3_lung, row_ha4_lung, row_ha5_lung), col=col_fun, column_dend_height = unit(2, "cm"), row_dend_width = unit(2, "cm"), row_names_gp = gpar(fontsize = 10), column_names_gp = gpar(fontsize = 10)) # the plot 
+
+draw(hm, merge_legend = TRUE) # merge legend so all the legend parts are shown vertically  
+```
+```{r}
+
+hm <- Heatmap(spearman_matrix_lung,  name="Spearman correlation",clustering_distance_rows = "manhattan", clustering_distance_columns = "manhattan", clustering_method_rows = "ward.D", clustering_method_columns = "ward.D", width = unit(15, "cm"), height = unit(15, "cm"), left_annotation = c(row_ha1_lung, row_ha2_lung, row_ha3_lung, row_ha4_lung, row_ha5_lung), col=col_fun, column_dend_height = unit(2, "cm"), row_dend_width = unit(2, "cm"), row_names_gp = gpar(fontsize = 10), column_names_gp = gpar(fontsize = 10)) # the plot 
+
+draw(hm, merge_legend = TRUE) # merge legend so all the legend parts are shown vertically  
+```
+
+```{r}
+pearson_matrix_lung <- cor(expr_df_lung, method="pearson")
+
+hm <- Heatmap(pearson_matrix_lung,  name="Spearman correlation",clustering_distance_rows = "manhattan", clustering_distance_columns = "manhattan", clustering_method_rows = "ward.D", clustering_method_columns = "ward.D", width = unit(15, "cm"), height = unit(15, "cm"), left_annotation = c(row_ha1_lung, row_ha2_lung, row_ha3_lung, row_ha4_lung, row_ha5_lung), col=col_fun, column_dend_height = unit(2, "cm"), row_dend_width = unit(2, "cm"), row_names_gp = gpar(fontsize = 10), column_names_gp = gpar(fontsize = 10)) # the plot 
+
+draw(hm, merge_legend = TRUE) # merge legend so all the legend parts are shown vertically 
+```
+
+```{r}
+mu_lung <- mean(pearson_matrix_lung)
+sigma_lung <- sd(pearson_matrix_lung)
+zscore_pearson_matrix_lung <- apply(pearson_matrix_lung, c(1,2), function(x) (x-mu_lung)/sigma_lung) # calculating the z-score for all matrix elements 
+
+hm <- Heatmap(zscore_pearson_matrix_lung,  name="Spearman correlation",clustering_distance_rows = "manhattan", clustering_distance_columns = "manhattan", clustering_method_rows = "ward.D", clustering_method_columns = "ward.D", width = unit(15, "cm"), height = unit(15, "cm"), left_annotation = c(row_ha1_lung, row_ha2_lung, row_ha3_lung, row_ha4_lung, row_ha5_lung), col=col_fun, column_dend_height = unit(2, "cm"), row_dend_width = unit(2, "cm"), row_names_gp = gpar(fontsize = 10), column_names_gp = gpar(fontsize = 10)) # the plot 
+
+draw(hm, merge_legend = TRUE) # merge legend so all the legend parts are shown vertically
+```
+
