@@ -4,7 +4,7 @@ Code accompanying the paper "Evaluation of single-sample network inference metho
 ## Folder resources 
 - Driver genes per cancer subtype, downloaded from [IntOGen](https://www.intogen.org/search) and [COSMIC](https://cancer.sanger.ac.uk/cosmic) databases, HumanNet-XN network, downloaded from [HumanNetv2](http://www.inetbio.org/humannet/), and the preprocessed expression data for lung and brain.
 
-## Folder scripts
+## Folder scripts_paper
 Scripts used to create the results in this paper. 
 - Preparation: The cell line selection and preprocessing file to prepare the DepMap expression data for network inference. Expression data downloaded from [DepMap](https://depmap.org/portal/) version 20Q4. 
 - Network_inference: All scripts used to infer the sample-specific networks (SSN, LIONESS, iENA, SSPGI, CSN) and the make_one_Edgelist file to create one file combining all samples from separate files per sample, used for SSN and iENA. 
